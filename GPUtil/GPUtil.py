@@ -31,7 +31,7 @@
 # SOFTWARE.
 
 from subprocess import Popen, PIPE
-from distutils import spawn
+import shutil
 import os
 import math
 import random
@@ -70,7 +70,7 @@ def getGPUs():
         # If the platform is Windows and nvidia-smi 
         # could not be found from the environment path, 
         # try to find it from system drive with default installation path
-        nvidia_smi = spawn.find_executable('nvidia-smi')
+        nvidia_smi = shutil.which('nvidia-smi')
         if nvidia_smi is None:
             nvidia_smi = "%s\\Program Files\\NVIDIA Corporation\\NVSMI\\nvidia-smi.exe" % os.environ['systemdrive']
     else:

@@ -1,6 +1,6 @@
 # GPUtil - GPU utilization
 #
-# A Python module for programmically getting the GPU utilization from NVIDA GPUs using nvidia-smi
+# A Python module for programmically getting the GPU utilization from NVIDIA GPUs using nvidia-smi
 #
 # Author: Anders Krogh Mortensen (anderskm)
 # Date:   16 January 2017

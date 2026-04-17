@@ -1,6 +1,6 @@
 # GPUtil - GPU utilization
 #
-# A Python module for programmically getting the GPU utilization from NVIDA GPUs using nvidia-smi
+# A Python module for programmically getting the GPU utilization from NVIDIA GPUs using nvidia-smi
 #
 # Author: Anders Krogh Mortensen (anderskm)
 # Date:   16 January 2017
@@ -43,7 +43,11 @@ import platform
 __version__ = '1.4.0'
 
 class GPU:
-    def __init__(self, ID, uuid, load, memoryTotal, memoryUsed, memoryFree, driver, gpu_name, serial, display_mode, display_active, temp_gpu):
+    def __init__(self, ID, uuid, load, memoryTotal, memoryUsed, memoryFree,
+                 driver, gpu_name, serial, display_mode, display_active, temp_gpu,
+                 pci_bus=None, core_clock=None, memory_clock=None,
+                 vbios_version=None, fan_speed=None,
+                 power_draw=None, power_limit=None):
         self.id = ID
         self.uuid = uuid
         self.load = load
@@ -57,6 +61,13 @@ class GPU:
         self.display_mode = display_mode
         self.display_active = display_active
         self.temperature = temp_gpu
+        self.pci_bus = pci_bus
+        self.core_clock = core_clock
+        self.memory_clock = memory_clock
+        self.vbios_version = vbios_version
+        self.fan_speed = fan_speed
+        self.power_draw = power_draw
+        self.power_limit = power_limit
 
 def safeFloatCast(strNumber):
     try:
@@ -65,67 +76,88 @@ def safeFloatCast(strNumber):
         number = float('nan')
     return number
 
-def getGPUs():
+
+def _safeHexCast(strNumber):
+    try:
+        return int(strNumber, 16)
+    except (ValueError, TypeError):
+        return None
+
+
+_QUERY_FIELDS = (
+    "index", "uuid", "utilization.gpu",
+    "memory.total", "memory.used", "memory.free",
+    "driver_version", "name", "gpu_serial",
+    "display_active", "display_mode", "temperature.gpu",
+    "pci.bus",
+    "clocks.current.graphics", "clocks.current.memory",
+    "vbios_version", "fan.speed", "power.draw", "power.limit",
+)
+
+# CREATE_NO_WINDOW flag on Windows suppresses the console window that would
+# otherwise flash when nvidia-smi is spawned from a GUI application (e.g. a
+# PyInstaller-bundled app). Has no effect on other platforms.
+_CREATE_NO_WINDOW = 0x08000000
+
+
+def getGPUs(hide_terminal_pop_up=True):
     if platform.system() == "Windows":
-        # If the platform is Windows and nvidia-smi 
-        # could not be found from the environment path, 
+        # If the platform is Windows and nvidia-smi
+        # could not be found from the environment path,
         # try to find it from system drive with default installation path
         nvidia_smi = shutil.which('nvidia-smi')
         if nvidia_smi is None:
             nvidia_smi = "%s\\Program Files\\NVIDIA Corporation\\NVSMI\\nvidia-smi.exe" % os.environ['systemdrive']
     else:
         nvidia_smi = "nvidia-smi"
-	
-    # Get ID, processing and memory utilization for all GPUs
+
+    popen_kwargs = {"stdout": PIPE}
+    if hide_terminal_pop_up and platform.system() == "Windows":
+        popen_kwargs["creationflags"] = _CREATE_NO_WINDOW
+
+    cmd = [
+        nvidia_smi,
+        "--query-gpu=" + ",".join(_QUERY_FIELDS),
+        "--format=csv,noheader,nounits",
+    ]
+
     try:
-        p = Popen([nvidia_smi,"--query-gpu=index,uuid,utilization.gpu,memory.total,memory.used,memory.free,driver_version,name,gpu_serial,display_active,display_mode,temperature.gpu", "--format=csv,noheader,nounits"], stdout=PIPE)
+        p = Popen(cmd, **popen_kwargs)
         stdout, stderror = p.communicate()
-        if (p.returncode != 0):
+        if p.returncode != 0:
             return []
-    except:
+    except Exception:
         return []
+
     output = stdout.decode('UTF-8')
-    # output = output[2:-1] # Remove b' and ' from string added by python
-    #print(output)
-    ## Parse output
-    # Split on line break
     lines = output.split(os.linesep)
-    #print(lines)
-    numDevices = len(lines)-1
+    numDevices = len(lines) - 1
+
     GPUs = []
     for g in range(numDevices):
-        line = lines[g]
-        #print(line)
-        vals = line.split(', ')
-        #print(vals)
-        for i in range(12):
-            # print(vals[i])
-            if (i == 0):
-                deviceIds = int(vals[i])
-            elif (i == 1):
-                uuid = vals[i]
-            elif (i == 2):
-                gpuUtil = safeFloatCast(vals[i])/100
-            elif (i == 3):
-                memTotal = safeFloatCast(vals[i])
-            elif (i == 4):
-                memUsed = safeFloatCast(vals[i])
-            elif (i == 5):
-                memFree = safeFloatCast(vals[i])
-            elif (i == 6):
-                driver = vals[i]
-            elif (i == 7):
-                gpu_name = vals[i]
-            elif (i == 8):
-                serial = vals[i]
-            elif (i == 9):
-                display_active = vals[i]
-            elif (i == 10):
-                display_mode = vals[i]
-            elif (i == 11):
-                temp_gpu = safeFloatCast(vals[i]);
-        GPUs.append(GPU(deviceIds, uuid, gpuUtil, memTotal, memUsed, memFree, driver, gpu_name, serial, display_mode, display_active, temp_gpu))
-    return GPUs  # (deviceIds, gpuUtil, memUtil)
+        vals = lines[g].split(', ')
+        GPUs.append(GPU(
+            ID=int(vals[0]),
+            uuid=vals[1],
+            load=safeFloatCast(vals[2]) / 100,
+            memoryTotal=safeFloatCast(vals[3]),
+            memoryUsed=safeFloatCast(vals[4]),
+            memoryFree=safeFloatCast(vals[5]),
+            driver=vals[6],
+            gpu_name=vals[7],
+            serial=vals[8],
+            display_active=vals[9],
+            display_mode=vals[10],
+            temp_gpu=safeFloatCast(vals[11]),
+            pci_bus=_safeHexCast(vals[12]),
+            core_clock=safeFloatCast(vals[13]),
+            memory_clock=safeFloatCast(vals[14]),
+            vbios_version=vals[15],
+            fan_speed=safeFloatCast(vals[16]),
+            power_draw=safeFloatCast(vals[17]),
+            power_limit=safeFloatCast(vals[18]),
+        ))
+    return GPUs
 
 
 def getAvailable(order = 'first', limit=1, maxLoad=0.5, maxMemory=0.5, memoryFree=0, includeNan=False, excludeID=[], excludeUUID=[]):

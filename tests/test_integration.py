@@ -23,9 +23,18 @@ def test_getgpus_parses_default(fake_nvidia_smi):
     assert busy.display_active == "Enabled"
     assert busy.display_mode == "Enabled"
     assert busy.temperature == 42
+    # Fields added in this fork: pci.bus is hex, clocks/power/fan are numeric.
+    assert busy.pci_bus == 0x01
+    assert busy.core_clock == 2205
+    assert busy.memory_clock == 11501
+    assert busy.vbios_version == "95.03.44.00.6A"
+    assert busy.fan_speed == 30
+    assert busy.power_draw == 95.40
+    assert busy.power_limit == 320.00
 
     assert idle.id == 1
     assert idle.load == 0.0
+    assert idle.pci_bus == 0x02
 
 
 def test_getgpus_empty_scenario(fake_nvidia_smi):
@@ -42,23 +51,38 @@ def test_getgpus_nan_sensors(fake_nvidia_smi):
     fake_nvidia_smi("nan_values")
     gpus = GPUtil.getGPUs()
     assert len(gpus) == 1
-    # Both utilization.gpu and temperature.gpu arrive as "[Not Supported]"
-    # and must become NaN floats without crashing the parser.
-    assert math.isnan(gpus[0].load)
-    assert math.isnan(gpus[0].temperature)
+    gpu = gpus[0]
+    # Every numeric sensor that can report "[Not Supported]" must become NaN
+    # without crashing the parser.
+    for field in ("load", "temperature", "core_clock", "memory_clock",
+                  "fan_speed", "power_draw", "power_limit"):
+        assert math.isnan(getattr(gpu, field)), field
 
 
 def test_getgpus_datacenter_numeric_serial(fake_nvidia_smi):
     fake_nvidia_smi("datacenter")
     gpus = GPUtil.getGPUs()
     assert len(gpus) == 1
-    assert gpus[0].name == "NVIDIA L40S"
-    assert gpus[0].driver == "580.126.09"
+    gpu = gpus[0]
+    assert gpu.name == "NVIDIA L40S"
+    assert gpu.driver == "580.126.09"
     # Datacenter GPUs expose a real serial number rather than [N/A].
-    assert gpus[0].serial == "1324920112345"
+    assert gpu.serial == "1324920112345"
     # Recent drivers return this sentinel string for display_mode; the parser
     # must pass it through untouched despite the embedded spaces.
-    assert gpus[0].display_mode == "[Requested functionality has been deprecated]"
+    assert gpu.display_mode == "[Requested functionality has been deprecated]"
+    # Fan-less datacenter cards expose fan.speed as [N/A].
+    assert math.isnan(gpu.fan_speed)
+    assert gpu.pci_bus == 0x82
+
+
+def test_getgpus_accepts_hide_terminal_kwarg(fake_nvidia_smi):
+    # The kwarg only takes effect on Windows (adds CREATE_NO_WINDOW); on other
+    # platforms it must still be accepted without raising.
+    gpus = GPUtil.getGPUs(hide_terminal_pop_up=False)
+    assert len(gpus) == 2
+    gpus = GPUtil.getGPUs(hide_terminal_pop_up=True)
+    assert len(gpus) == 2
 
 
 def test_getavailable_orders_first(fake_nvidia_smi):

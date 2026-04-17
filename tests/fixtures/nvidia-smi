@@ -1,20 +1,20 @@
 #!/usr/bin/env python3
 """Fake nvidia-smi used by the GPUtil test suite.
 
-The output format matches what the real nvidia-smi 550.x emits for:
+The output format matches what real nvidia-smi 550.x / 580.x emits for:
     nvidia-smi --query-gpu=index,uuid,utilization.gpu,memory.total,memory.used,
                memory.free,driver_version,name,gpu_serial,display_active,
-               display_mode,temperature.gpu
+               display_mode,temperature.gpu,pci.bus,clocks.current.graphics,
+               clocks.current.memory,vbios_version,fan.speed,power.draw,
+               power.limit
                --format=csv,noheader,nounits
 
-Observed on real hardware (RTX 4080 SUPER):
-    0, GPU-2fc5ef53-da2a-d55d-9630-545b861a9b04, 34, 16376, 2681, 13389,
-       550.120, NVIDIA GeForce RTX 4080 SUPER, [N/A], Enabled, Enabled, 42\\n
-
 Notes:
-  - Field separator is ', ' (comma + space).
-  - Numeric fields are bare integers (nounits strips '%', 'MiB', etc.).
+  - Field separator is ', ' (comma + space). 19 fields per line.
+  - Numeric fields are bare integers/floats (nounits strips '%', 'MiB', 'W').
+  - pci.bus is a hex string with an "0x" prefix.
   - Consumer GPUs typically report gpu_serial as '[N/A]'.
+  - Fan-less datacenter GPUs report fan.speed as '[N/A]'.
   - Unreadable sensors surface as '[Not Supported]'.
   - The line terminator is a single '\\n' after the last data line; a zero-GPU
     query emits nothing at all.
@@ -26,35 +26,37 @@ Scenarios are selected via the FAKE_NVIDIA_SMI_SCENARIO environment variable:
   single_idle  - one idle consumer GPU
   three_mixed  - three GPUs with varied load/memory
   nan_values   - a GPU with [Not Supported] sensors (load and temperature)
-  datacenter   - a Tesla-style GPU exposing a numeric serial
+  datacenter   - a Tesla/L40S-style GPU: numeric serial, [N/A] fan,
+                 deprecated-sentinel display_mode
 """
 import os
 import sys
 
+# Field layout: index, uuid, util, memTotal, memUsed, memFree, driver, name,
+# serial, display_active, display_mode, temp, pci.bus, coreClk, memClk,
+# vbios, fan, powerDraw, powerLimit
 SCENARIOS = {
     "default": [
-        "0, GPU-2fc5ef53-da2a-d55d-9630-545b861a9b04, 34, 16376, 2681, 13389, 550.120, NVIDIA GeForce RTX 4080 SUPER, [N/A], Enabled, Enabled, 42",
-        "1, GPU-8f1c0e23-4a7d-9b5f-1e20-aabbccddeeff, 0, 16376, 512, 15864, 550.120, NVIDIA GeForce RTX 4070, [N/A], Disabled, Disabled, 35",
+        "0, GPU-2fc5ef53-da2a-d55d-9630-545b861a9b04, 34, 16376, 2681, 13389, 550.120, NVIDIA GeForce RTX 4080 SUPER, [N/A], Enabled, Enabled, 42, 0x01, 2205, 11501, 95.03.44.00.6A, 30, 95.40, 320.00",
+        "1, GPU-8f1c0e23-4a7d-9b5f-1e20-aabbccddeeff, 0, 16376, 512, 15864, 550.120, NVIDIA GeForce RTX 4070, [N/A], Disabled, Disabled, 35, 0x02, 210, 405, 95.04.02.00.01, 0, 15.22, 200.00",
     ],
     "empty": [],
     "single_idle": [
-        "0, GPU-2fc5ef53-da2a-d55d-9630-545b861a9b04, 0, 16376, 100, 16276, 550.120, NVIDIA GeForce RTX 4080 SUPER, [N/A], Disabled, Disabled, 30",
+        "0, GPU-2fc5ef53-da2a-d55d-9630-545b861a9b04, 0, 16376, 100, 16276, 550.120, NVIDIA GeForce RTX 4080 SUPER, [N/A], Disabled, Disabled, 30, 0x01, 210, 405, 95.03.44.00.6A, 0, 12.00, 320.00",
     ],
     "three_mixed": [
-        "0, GPU-aaaaaaaa-0000-0000-0000-000000000001, 10, 8192, 500, 7692, 550.120, NVIDIA A, [N/A], Enabled, Enabled, 50",
-        "1, GPU-bbbbbbbb-0000-0000-0000-000000000002, 90, 8192, 7000, 1192, 550.120, NVIDIA B, [N/A], Disabled, Disabled, 80",
-        "2, GPU-cccccccc-0000-0000-0000-000000000003, 30, 8192, 100, 8092, 550.120, NVIDIA C, [N/A], Enabled, Enabled, 60",
+        "0, GPU-aaaaaaaa-0000-0000-0000-000000000001, 10, 8192, 500, 7692, 550.120, NVIDIA A, [N/A], Enabled, Enabled, 50, 0x01, 1500, 7000, 90.01.01.00.01, 25, 50.00, 200.00",
+        "1, GPU-bbbbbbbb-0000-0000-0000-000000000002, 90, 8192, 7000, 1192, 550.120, NVIDIA B, [N/A], Disabled, Disabled, 80, 0x02, 2100, 11000, 90.01.01.00.02, 80, 180.00, 200.00",
+        "2, GPU-cccccccc-0000-0000-0000-000000000003, 30, 8192, 100, 8092, 550.120, NVIDIA C, [N/A], Enabled, Enabled, 60, 0x03, 1700, 9000, 90.01.01.00.03, 40, 90.00, 200.00",
     ],
     "nan_values": [
-        "0, GPU-nannnnnn-0000-0000-0000-000000000001, [Not Supported], 8192, 100, 8092, 550.120, NVIDIA NoSensors, [N/A], Disabled, Disabled, [Not Supported]",
+        "0, GPU-nannnnnn-0000-0000-0000-000000000001, [Not Supported], 8192, 100, 8092, 550.120, NVIDIA NoSensors, [N/A], Disabled, Disabled, [Not Supported], 0x01, [Not Supported], [Not Supported], 90.01.01.00.01, [Not Supported], [Not Supported], [Not Supported]",
     ],
-    # Modeled on a real NVIDIA L40S running driver 580.126.09: datacenter cards
-    # expose a numeric serial, and recent drivers surface display_mode as the
-    # "[Requested functionality has been deprecated]" sentinel. The sentinel
-    # contains spaces but no comma, so split(", ") still yields 12 fields.
-    # UUID and serial below are synthetic.
+    # Modeled on a real NVIDIA L40S running driver 580.126.09. UUID and serial
+    # below are synthetic. Fan-less datacenter cards report fan.speed as [N/A];
+    # recent drivers surface display_mode as the deprecation sentinel.
     "datacenter": [
-        "0, GPU-dddddddd-0000-0000-0000-000000000001, 0, 46068, 4343, 41115, 580.126.09, NVIDIA L40S, 1324920112345, Disabled, [Requested functionality has been deprecated], 37",
+        "0, GPU-dddddddd-0000-0000-0000-000000000001, 0, 46068, 4343, 41115, 580.126.09, NVIDIA L40S, 1324920112345, Disabled, [Requested functionality has been deprecated], 37, 0x82, 2520, 9001, 95.02.66.00.02, [N/A], 81.24, 350.00",
     ],
 }
 

@@ -1,4 +1,7 @@
 # GPUtil
+
+[![tests](https://github.com/MagicalTux/gputil/actions/workflows/tests.yml/badge.svg)](https://github.com/MagicalTux/gputil/actions/workflows/tests.yml)
+
 `GPUtil` is a Python module for getting the GPU status from NVIDA GPUs using `nvidia-smi`.
 `GPUtil` locates all GPUs on the computer, determines their availablity and returns a ordered list of available GPUs.
 Availablity is based upon the current memory consumption and load of each GPU.

@@ -48,8 +48,13 @@ SCENARIOS = {
     "nan_values": [
         "0, GPU-nannnnnn-0000-0000-0000-000000000001, [Not Supported], 8192, 100, 8092, 550.120, NVIDIA NoSensors, [N/A], Disabled, Disabled, [Not Supported]",
     ],
+    # Modeled on a real NVIDIA L40S running driver 580.126.09: datacenter cards
+    # expose a numeric serial, and recent drivers surface display_mode as the
+    # "[Requested functionality has been deprecated]" sentinel. The sentinel
+    # contains spaces but no comma, so split(", ") still yields 12 fields.
+    # UUID and serial below are synthetic.
     "datacenter": [
-        "0, GPU-dddddddd-0000-0000-0000-000000000001, 55, 81920, 20480, 61440, 550.120, Tesla A100-SXM4-80GB, 1324920112345, Disabled, Disabled, 58",
+        "0, GPU-dddddddd-0000-0000-0000-000000000001, 0, 46068, 4343, 41115, 580.126.09, NVIDIA L40S, 1324920112345, Disabled, [Requested functionality has been deprecated], 37",
     ],
 }
 

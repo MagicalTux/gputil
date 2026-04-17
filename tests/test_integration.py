@@ -52,9 +52,13 @@ def test_getgpus_datacenter_numeric_serial(fake_nvidia_smi):
     fake_nvidia_smi("datacenter")
     gpus = GPUtil.getGPUs()
     assert len(gpus) == 1
-    assert gpus[0].name == "Tesla A100-SXM4-80GB"
+    assert gpus[0].name == "NVIDIA L40S"
+    assert gpus[0].driver == "580.126.09"
     # Datacenter GPUs expose a real serial number rather than [N/A].
     assert gpus[0].serial == "1324920112345"
+    # Recent drivers return this sentinel string for display_mode; the parser
+    # must pass it through untouched despite the embedded spaces.
+    assert gpus[0].display_mode == "[Requested functionality has been deprecated]"
 
 
 def test_getavailable_orders_first(fake_nvidia_smi):

@@ -1,33 +1,55 @@
 #!/usr/bin/env python3
 """Fake nvidia-smi used by the GPUtil test suite.
 
+The output format matches what the real nvidia-smi 550.x emits for:
+    nvidia-smi --query-gpu=index,uuid,utilization.gpu,memory.total,memory.used,
+               memory.free,driver_version,name,gpu_serial,display_active,
+               display_mode,temperature.gpu
+               --format=csv,noheader,nounits
+
+Observed on real hardware (RTX 4080 SUPER):
+    0, GPU-2fc5ef53-da2a-d55d-9630-545b861a9b04, 34, 16376, 2681, 13389,
+       550.120, NVIDIA GeForce RTX 4080 SUPER, [N/A], Enabled, Enabled, 42\\n
+
+Notes:
+  - Field separator is ', ' (comma + space).
+  - Numeric fields are bare integers (nounits strips '%', 'MiB', etc.).
+  - Consumer GPUs typically report gpu_serial as '[N/A]'.
+  - Unreadable sensors surface as '[Not Supported]'.
+  - The line terminator is a single '\\n' after the last data line; a zero-GPU
+    query emits nothing at all.
+
 Scenarios are selected via the FAKE_NVIDIA_SMI_SCENARIO environment variable:
-  default      - two GPUs: one busy, one idle
-  empty        - no GPUs (zero data lines)
+  default      - two consumer GPUs (one busy, one idle) with [N/A] serials
+  empty        - no GPUs (empty output)
   fail         - exit with status 1
-  single_idle  - one idle GPU
+  single_idle  - one idle consumer GPU
   three_mixed  - three GPUs with varied load/memory
-  nan_values   - one GPU whose utilization.gpu is "[Not Supported]"
+  nan_values   - a GPU with [Not Supported] sensors (load and temperature)
+  datacenter   - a Tesla-style GPU exposing a numeric serial
 """
 import os
 import sys
 
 SCENARIOS = {
     "default": [
-        "0, GPU-1111aaaa-2222-3333-4444-555566667777, 25, 8192, 2048, 6144, 535.86.05, NVIDIA GeForce RTX 3080, 1234567890, Enabled, Enabled, 65",
-        "1, GPU-8888bbbb-9999-aaaa-bbbb-ccccddddeeee, 0, 16384, 512, 15872, 535.86.05, NVIDIA GeForce RTX 3090, 0987654321, Disabled, Disabled, 42",
+        "0, GPU-2fc5ef53-da2a-d55d-9630-545b861a9b04, 34, 16376, 2681, 13389, 550.120, NVIDIA GeForce RTX 4080 SUPER, [N/A], Enabled, Enabled, 42",
+        "1, GPU-8f1c0e23-4a7d-9b5f-1e20-aabbccddeeff, 0, 16376, 512, 15864, 550.120, NVIDIA GeForce RTX 4070, [N/A], Disabled, Disabled, 35",
     ],
     "empty": [],
     "single_idle": [
-        "0, GPU-1111aaaa-2222-3333-4444-555566667777, 0, 8192, 100, 8092, 535.86.05, NVIDIA GeForce RTX 3080, 1234567890, Disabled, Disabled, 40",
+        "0, GPU-2fc5ef53-da2a-d55d-9630-545b861a9b04, 0, 16376, 100, 16276, 550.120, NVIDIA GeForce RTX 4080 SUPER, [N/A], Disabled, Disabled, 30",
     ],
     "three_mixed": [
-        "0, GPU-aaaa-1, 10, 8192, 500, 7692, 535.86.05, NVIDIA A, 111, Enabled, Enabled, 50",
-        "1, GPU-bbbb-2, 90, 8192, 7000, 1192, 535.86.05, NVIDIA B, 222, Disabled, Disabled, 80",
-        "2, GPU-cccc-3, 30, 8192, 100, 8092, 535.86.05, NVIDIA C, 333, Enabled, Enabled, 60",
+        "0, GPU-aaaaaaaa-0000-0000-0000-000000000001, 10, 8192, 500, 7692, 550.120, NVIDIA A, [N/A], Enabled, Enabled, 50",
+        "1, GPU-bbbbbbbb-0000-0000-0000-000000000002, 90, 8192, 7000, 1192, 550.120, NVIDIA B, [N/A], Disabled, Disabled, 80",
+        "2, GPU-cccccccc-0000-0000-0000-000000000003, 30, 8192, 100, 8092, 550.120, NVIDIA C, [N/A], Enabled, Enabled, 60",
     ],
     "nan_values": [
-        "0, GPU-nan-1, [Not Supported], 8192, 100, 8092, 535.86.05, NVIDIA NaN, 444, Disabled, Disabled, 45",
+        "0, GPU-nannnnnn-0000-0000-0000-000000000001, [Not Supported], 8192, 100, 8092, 550.120, NVIDIA NoSensors, [N/A], Disabled, Disabled, [Not Supported]",
+    ],
+    "datacenter": [
+        "0, GPU-dddddddd-0000-0000-0000-000000000001, 55, 81920, 20480, 61440, 550.120, Tesla A100-SXM4-80GB, 1324920112345, Disabled, Disabled, 58",
     ],
 }
 
@@ -46,8 +68,7 @@ def main():
         # Real nvidia-smi terminates populated output with a trailing newline.
         sys.stdout.write("\n".join(lines))
         sys.stdout.write("\n")
-    # Zero-GPU output is empty (no trailing newline) to match how GPUtil's
-    # parser computes numDevices from the split result.
+    # Zero-GPU output is empty (no trailing newline) to match real behavior.
     return 0
 
 

@@ -11,17 +11,18 @@ def test_getgpus_parses_default(fake_nvidia_smi):
 
     busy, idle = gpus
     assert busy.id == 0
-    assert busy.uuid == "GPU-1111aaaa-2222-3333-4444-555566667777"
-    assert busy.load == 0.25
-    assert busy.memoryTotal == 8192
-    assert busy.memoryUsed == 2048
-    assert busy.memoryFree == 6144
-    assert busy.name == "NVIDIA GeForce RTX 3080"
-    assert busy.driver == "535.86.05"
-    assert busy.serial == "1234567890"
+    assert busy.uuid == "GPU-2fc5ef53-da2a-d55d-9630-545b861a9b04"
+    assert busy.load == 0.34
+    assert busy.memoryTotal == 16376
+    assert busy.memoryUsed == 2681
+    assert busy.memoryFree == 13389
+    assert busy.name == "NVIDIA GeForce RTX 4080 SUPER"
+    assert busy.driver == "550.120"
+    # Consumer GPUs commonly report [N/A] for the serial; keep it as a string.
+    assert busy.serial == "[N/A]"
     assert busy.display_active == "Enabled"
     assert busy.display_mode == "Enabled"
-    assert busy.temperature == 65
+    assert busy.temperature == 42
 
     assert idle.id == 1
     assert idle.load == 0.0
@@ -37,11 +38,23 @@ def test_getgpus_handles_failure(fake_nvidia_smi):
     assert GPUtil.getGPUs() == []
 
 
-def test_getgpus_nan_load(fake_nvidia_smi):
+def test_getgpus_nan_sensors(fake_nvidia_smi):
     fake_nvidia_smi("nan_values")
     gpus = GPUtil.getGPUs()
     assert len(gpus) == 1
+    # Both utilization.gpu and temperature.gpu arrive as "[Not Supported]"
+    # and must become NaN floats without crashing the parser.
     assert math.isnan(gpus[0].load)
+    assert math.isnan(gpus[0].temperature)
+
+
+def test_getgpus_datacenter_numeric_serial(fake_nvidia_smi):
+    fake_nvidia_smi("datacenter")
+    gpus = GPUtil.getGPUs()
+    assert len(gpus) == 1
+    assert gpus[0].name == "Tesla A100-SXM4-80GB"
+    # Datacenter GPUs expose a real serial number rather than [N/A].
+    assert gpus[0].serial == "1324920112345"
 
 
 def test_getavailable_orders_first(fake_nvidia_smi):

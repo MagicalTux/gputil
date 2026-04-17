@@ -1,0 +1,55 @@
+#!/usr/bin/env python3
+"""Fake nvidia-smi used by the GPUtil test suite.
+
+Scenarios are selected via the FAKE_NVIDIA_SMI_SCENARIO environment variable:
+  default      - two GPUs: one busy, one idle
+  empty        - no GPUs (zero data lines)
+  fail         - exit with status 1
+  single_idle  - one idle GPU
+  three_mixed  - three GPUs with varied load/memory
+  nan_values   - one GPU whose utilization.gpu is "[Not Supported]"
+"""
+import os
+import sys
+
+SCENARIOS = {
+    "default": [
+        "0, GPU-1111aaaa-2222-3333-4444-555566667777, 25, 8192, 2048, 6144, 535.86.05, NVIDIA GeForce RTX 3080, 1234567890, Enabled, Enabled, 65",
+        "1, GPU-8888bbbb-9999-aaaa-bbbb-ccccddddeeee, 0, 16384, 512, 15872, 535.86.05, NVIDIA GeForce RTX 3090, 0987654321, Disabled, Disabled, 42",
+    ],
+    "empty": [],
+    "single_idle": [
+        "0, GPU-1111aaaa-2222-3333-4444-555566667777, 0, 8192, 100, 8092, 535.86.05, NVIDIA GeForce RTX 3080, 1234567890, Disabled, Disabled, 40",
+    ],
+    "three_mixed": [
+        "0, GPU-aaaa-1, 10, 8192, 500, 7692, 535.86.05, NVIDIA A, 111, Enabled, Enabled, 50",
+        "1, GPU-bbbb-2, 90, 8192, 7000, 1192, 535.86.05, NVIDIA B, 222, Disabled, Disabled, 80",
+        "2, GPU-cccc-3, 30, 8192, 100, 8092, 535.86.05, NVIDIA C, 333, Enabled, Enabled, 60",
+    ],
+    "nan_values": [
+        "0, GPU-nan-1, [Not Supported], 8192, 100, 8092, 535.86.05, NVIDIA NaN, 444, Disabled, Disabled, 45",
+    ],
+}
+
+
+def main():
+    scenario = os.environ.get("FAKE_NVIDIA_SMI_SCENARIO", "default")
+    if scenario == "fail":
+        sys.stderr.write("fake nvidia-smi: forced failure\n")
+        return 1
+    if scenario not in SCENARIOS:
+        sys.stderr.write("fake nvidia-smi: unknown scenario %r\n" % scenario)
+        return 2
+
+    lines = SCENARIOS[scenario]
+    if lines:
+        # Real nvidia-smi terminates populated output with a trailing newline.
+        sys.stdout.write("\n".join(lines))
+        sys.stdout.write("\n")
+    # Zero-GPU output is empty (no trailing newline) to match how GPUtil's
+    # parser computes numDevices from the split result.
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
